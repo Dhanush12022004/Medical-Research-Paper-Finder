@@ -9,15 +9,14 @@
 <body>
     <div class="container">
         <h1>Medical Research Paper Finder</h1>
-
-        <!-- Text Input Form -->
         <form id="search-form">
             <label for="query">Enter the medical domain you're researching or use voice input:</label>
             <input type="text" id="query" name="query" placeholder="e.g., Cancer, Diabetes" required>
+            <label for="count">Number of papers to display:</label>
+            <input type="number" id="count" name="count" min="1" max="50" placeholder="10" required>
             <button type="submit">Search</button>
         </form>
 
-        <!-- Voice Input Button -->
         <button id="voice-btn">🎤 Speak</button>
         <p id="voice-status"></p>
 
@@ -25,47 +24,64 @@
     </div>
 
     <script>
-        // JavaScript to handle text input form submission
         const form = document.getElementById('search-form');
         form.addEventListener('submit', function(event) {
             event.preventDefault();
             const query = document.getElementById('query').value;
-            sendQuery(query);
+            const count = document.getElementById('count').value || 10;
+            sendQuery(query, count);
         });
 
-        // Function to send query to the Flask server
-        function sendQuery(query) {
+        function sendQuery(query, count) {
             fetch('/search', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
                 },
-                body: `query=${encodeURIComponent(query)}`
+                body: `query=${encodeURIComponent(query)}&count=${count}`
             })
             .then(response => response.json())
-            .then(data => {
-                const resultsDiv = document.getElementById('results');
-                resultsDiv.innerHTML = ''; // Clear previous results
+            .then(data => displayPapers(data));
+        }
 
-                if (data.error) {
-                    resultsDiv.innerHTML = `<p>${data.error}</p>`;
-                } else {
-                    data.forEach((paper, index) => {
-                        const paperDiv = document.createElement('div');
-                        paperDiv.classList.add('paper');
-                        paperDiv.innerHTML = `
-                            <h2>Paper ${index + 1}: ${paper.title}</h2>
-                            <p><strong>Summary:</strong> ${paper.summary}</p>
-                            <p><a href="${paper.link}" target="_blank">Read more</a></p>
-                            <p><strong>Source:</strong> ${paper.source}</p>
-                        `;
-                        resultsDiv.appendChild(paperDiv);
-                    });
+        function displayPapers(papers) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+
+            const clusters = {};
+
+            papers.forEach(paper => {
+                if (!clusters[paper.cluster]) {
+                    clusters[paper.cluster] = [];
                 }
+                clusters[paper.cluster].push(paper);
+            });
+
+            Object.keys(clusters).forEach(cluster => {
+                const clusterDiv = document.createElement('div');
+                clusterDiv.classList.add('cluster');
+                clusterDiv.innerHTML = `<h2>Cluster ${parseInt(cluster) + 1}</h2>`;
+
+                clusters[cluster].forEach((paper, index) => {
+                    const paperDiv = document.createElement('div');
+                    paperDiv.classList.add('paper');
+                    paperDiv.innerHTML = `
+                        <h3>Paper ${index + 1}: ${paper.title}</h3>
+                        <p><strong>Summary:</strong> ${paper.summary}</p>
+                        <p><strong>Keywords:</strong> ${paper.keywords.join(', ')}</p>
+                        <p><strong>Sentiment:</strong> ${paper.sentiment.category} (${paper.sentiment.polarity.toFixed(2)})</p>
+                        <button onclick="speakText('${paper.summary}')">🔊 Hear Abstract</button>
+                        <p><strong>Rating:</strong> ${"★".repeat(paper.rating)} ${"☆".repeat(5 - paper.rating)}</p>
+                        <p><a href="${paper.link}" target="_blank">Read more</a></p>
+                        <p><strong>Source:</strong> ${paper.source}</p>
+                    `;
+                    clusterDiv.appendChild(paperDiv);
+                });
+
+                resultsDiv.appendChild(clusterDiv);
             });
         }
 
-        // Web Speech API to handle voice input
         const voiceBtn = document.getElementById('voice-btn');
         const voiceStatus = document.getElementById('voice-status');
         const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -82,13 +98,17 @@
         recognition.onresult = function(event) {
             const transcript = event.results[0][0].transcript;
             document.getElementById('query').value = transcript;
-            sendQuery(transcript);
             voiceStatus.textContent = "";
         };
 
         voiceBtn.addEventListener('click', () => {
             recognition.start();
         });
+
+        function speakText(text) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            window.speechSynthesis.speak(utterance);
+        }
     </script>
 </body>
 </html>
